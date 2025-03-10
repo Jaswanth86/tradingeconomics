@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Economic Indicator Comparison</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #f5f5f5; color: #333; line-height: 1.6; padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; background-color: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); }
+    h1 { text-align: center; margin-bottom: 30px; color: #2c3e50; }
+    .selectors { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 30px; justify-content: center; }
+    .selector-group { flex: 1; min-width: 220px; }
+    label { display: block; margin-bottom: 8px; font-weight: bold; color: #2c3e50; }
+    select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px; }
+    button { display: block; margin: 20px auto; padding: 12px 24px; background-color: #3498db; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; transition: background-color 0.3s; }
+    button:hover { background-color: #2980b9; }
+    .results { margin-top: 40px; }
+    .chart-container { height: 400px; margin-bottom: 30px; }
+    .data-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    .data-table th, .data-table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+    .data-table th { background-color: #f2f2f2; font-weight: bold; }
+    .data-table tr:hover { background-color: #f5f5f5; }
+    .loading { text-align: center; margin: 20px 0; display: none; }
+    .error { color: #e74c3c; text-align: center; margin: 20px 0; display: none; }
+    .country-info { display: flex; gap: 20px; margin-bottom: 30px; }
+    .country-card { flex: 1; padding: 20px; border-radius: 8px; background-color: #f8f9fa; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); }
+    .country-card h3 { margin-bottom: 10px; color: #2c3e50; }
+    @media (max-width: 768px) { .selectors { flex-direction: column; } .country-info { flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Economic Indicator Comparison Tool</h1>
+    
+    <div class="selectors">
+      <div class="selector-group">
+        <label for="country1">First Country:</label>
+        <select id="country1">
+          <option value="" disabled selected>Select a country</option>
+        </select>
+      </div>
+      
+      <div class="selector-group">
+        <label for="country2">Second Country:</label>
+        <select id="country2">
+          <option value="" disabled selected>Select a country</option>
+        </select>
+      </div>
+      
+      <div class="selector-group">
+        <label for="indicator">Economic Indicator:</label>
+        <select id="indicator">
+          <option value="" disabled selected>Select an indicator</option>
+          <option value="gdp">GDP (Billion USD)</option>
+          <option value="population">Population (Millions)</option>
+        </select>
+      </div>
+    </div>
+    
+    <button id="compare-btn">Compare Countries</button>
+    
+    <div id="loading" class="loading">Loading data...</div>
+    <div id="error" class="error"></div>
+    
+    <div id="results" class="results" style="display: none;">
+      <div class="country-info">
+        <div id="country1-info" class="country-card">
+          <h3 id="country1-name">Country 1</h3>
+          <p>Current Value: <span id="country1-value">-</span></p>
+          <p>Last Update: <span id="country1-date">-</span></p>
+        </div>
+        
+        <div id="country2-info" class="country-card">
+          <h3 id="country2-name">Country 2</h3>
+          <p>Current Value: <span id="country2-value">-</span></p>
+          <p>Last Update: <span id="country2-date">-</span></p>
+        </div>
+      </div>
+      
+      <div id="chart-container" class="chart-container"></div>
+      
+      <h2>Historical Data</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th id="table-country1">Country 1</th>
+            <th id="table-country2">Country 2</th>
+          </tr>
+        </thead>
+        <tbody id="data-table-body">
+          <!-- Data will be inserted here -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+  
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.16.1/plotly.min.js"></script>
+  <script>
+    const API_KEY = '1909fb9d1e494b1:2czsqcc0rgn34ur'; 
+    const BASE_URL = 'https://api.tradingeconomics.com/';
+    
+    const country1Select = document.getElementById('country1');
+    const country2Select = document.getElementById('country2');
+    const indicatorSelect = document.getElementById('indicator');
+    const compareBtn = document.getElementById('compare-btn');
+    const loadingEl = document.getElementById('loading');
+    const errorEl = document.getElementById('error');
+    const resultsEl = document.getElementById('results');
+    
+    document.addEventListener('DOMContentLoaded', initApp);
+    
+    function initApp() {
+      loadCountries();
+      compareBtn.addEventListener('click', compareCountries);
+    }
+    
+    async function loadCountries() {
+      try {
+        loadingEl.style.display = 'block';
+        const url = `${BASE_URL}country?c=${API_KEY}&format=json`;
+        console.log('Fetching countries from:', url);
+        const response = await axios.get(url);
+        const countries = response.data;
+        console.log('Countries response:', countries);
+        
+        if (!Array.isArray(countries) || countries.length === 0) {
+          throw new Error('Invalid country data received from API');
+        }
+
+        countries.sort((a, b) => a.Country.localeCompare(b.Country));
+        
+        countries.forEach(country => {
+          const option1 = document.createElement('option');
+          option1.value = country.Country.toLowerCase();
+          option1.textContent = country.Country;
+          country1Select.appendChild(option1);
+          
+          const option2 = document.createElement('option');
+          option2.value = country.Country.toLowerCase();
+          option2.textContent = country.Country;
+          country2Select.appendChild(option2);
+        });
+        
+        country1Select.value = 'sweden';
+        country2Select.value = 'mexico';
+        indicatorSelect.value = 'gdp';
+        
+        loadingEl.style.display = 'none';
+      } catch (error) {
+        showError(`Failed to load countries list: ${error.message}. Please check your API key or network.`);
+        console.error('Error loading countries:', error);
+      }
+    }
+    
+    async function compareCountries() {
+      const country1 = country1Select.value;
+      const country2 = country2Select.value;
+      const indicator = indicatorSelect.value;
+      
+      if (!country1 || !country2 || !indicator) {
+        showError('Please select both countries and an indicator.');
+        return;
+      }
+      
+      try {
+        loadingEl.style.display = 'block';
+        errorEl.style.display = 'none';
+        resultsEl.style.display = 'none';
+        
+        const indicatorMap = {
+          'gdp': 'gdp',
+          'population': 'population'
+        };
+        const apiIndicator = indicatorMap[indicator] || indicator;
+
+        const endDate = new Date().toISOString().split('T')[0];
+        const startDate = new Date();
+        startDate.setFullYear(startDate.getFullYear() - 10);
+        const startDateStr = startDate.toISOString().split('T')[0];
+
+        const url = `${BASE_URL}historical/country/${country1},${country2}/indicator/${apiIndicator}?c=${API_KEY}&d1=${startDateStr}&d2=${endDate}&format=json`;
+        console.log('Fetching historical data from:', url);
+        const response = await axios.get(url);
+        const data = response.data;
+        console.log('Historical data response:', data);
+        
+        if (!data || data.length === 0) {
+          throw new Error('No historical data available for the selected countries and indicator.');
+        }
+
+        const processedData = processApiData(data, country1, country2, indicator);
+        
+        if (processedData.country1.data.length === 0 && processedData.country2.data.length === 0) {
+          throw new Error('No matching data found for the selected countries.');
+        }
+
+        displayResults(processedData, country1, country2, indicator);
+        
+        loadingEl.style.display = 'none';
+        resultsEl.style.display = 'block';
+      } catch (error) {
+        showError(`Failed to fetch data: ${error.message}. Please try a different indicator or check your selections.`);
+        console.error('Error comparing countries:', error);
+      }
+    }
+
+    function processApiData(data, country1, country2, indicator) {
+      console.log('Processing data for:', country1, country2);
+      console.log('Raw data:', data);
+      
+      const country1Data = data.filter(d => {
+        const match = d.Country.toLowerCase() === country1.toLowerCase();
+        if (!match) console.log(`No match for ${country1}:`, d.Country);
+        return match;
+      });
+      const country2Data = data.filter(d => {
+        const match = d.Country.toLowerCase() === country2.toLowerCase();
+        if (!match) console.log(`No match for ${country2}:`, d.Country);
+        return match;
+      });
+
+      return {
+        country1: {
+          name: getSelectedOptionText(country1Select),
+          code: country1,
+          data: country1Data.map(d => ({ date: d.DateTime || d.date, value: d.Value || d.value })),
+          currentValue: country1Data[country1Data.length - 1]?.Value || country1Data[country1Data.length - 1]?.value || 'N/A',
+          lastUpdate: country1Data[country1Data.length - 1]?.DateTime || country1Data[country1Data.length - 1]?.date || 'N/A'
+        },
+        country2: {
+          name: getSelectedOptionText(country2Select),
+          code: country2,
+          data: country2Data.map(d => ({ date: d.DateTime || d.date, value: d.Value || d.value })),
+          currentValue: country2Data[country2Data.length - 1]?.Value || country2Data[country2Data.length - 1]?.value || 'N/A',
+          lastUpdate: country2Data[country2Data.length - 1]?.DateTime || country2Data[country2Data.length - 1]?.date || 'N/A'
+        },
+        indicator: {
+          name: getSelectedOptionText(indicatorSelect),
+          code: indicator
+        }
+      };
+    }
+    
+    function displayResults(data, country1, country2, indicator) {
+      document.getElementById('country1-name').textContent = data.country1.name;
+      document.getElementById('country1-value').textContent = formatValue(data.country1.currentValue, indicator);
+      document.getElementById('country1-date').textContent = formatDate(data.country1.lastUpdate);
+      
+      document.getElementById('country2-name').textContent = data.country2.name;
+      document.getElementById('country2-value').textContent = formatValue(data.country2.currentValue, indicator);
+      document.getElementById('country2-date').textContent = formatDate(data.country2.lastUpdate);
+      
+      document.getElementById('table-country1').textContent = data.country1.name;
+      document.getElementById('table-country2').textContent = data.country2.name;
+      
+      createChart(data);
+      populateDataTable(data);
+    }
+    
+    function createChart(data) {
+      const dates1 = data.country1.data.map(item => item.date);
+      const dates2 = data.country2.data.map(item => item.date);
+      
+      const trace1 = {
+        x: dates1,
+        y: data.country1.data.map(item => item.value),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: data.country1.name,
+        line: { width: 3, color: '#3498db' }
+      };
+      
+      const trace2 = {
+        x: dates2,
+        y: data.country2.data.map(item => item.value),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: data.country2.name,
+        line: { width: 3, color: '#e74c3c' }
+      };
+      
+      const layout = {
+        title: `${data.indicator.name} Comparison`,
+        xaxis: { title: 'Date' },
+        yaxis: { title: getIndicatorUnit(data.indicator.code) },
+        autosize: true,
+        margin: { l: 50, r: 50, b: 50, t: 80, pad: 4 },
+        hovermode: 'closest'
+      };
+      
+      Plotly.newPlot('chart-container', [trace1, trace2], layout, {responsive: true});
+    }
+    
+    function populateDataTable(data) {
+      const tableBody = document.getElementById('data-table-body');
+      tableBody.innerHTML = '';
+      
+      const maxRows = Math.max(data.country1.data.length, data.country2.data.length);
+      for (let i = maxRows - 1; i >= 0; i--) {
+        const row = document.createElement('tr');
+        
+        const dateCell = document.createElement('td');
+        const date = data.country1.data[i]?.date || data.country2.data[i]?.date || 'N/A';
+        dateCell.textContent = formatDate(date);
+        row.appendChild(dateCell);
+        
+        const value1Cell = document.createElement('td');
+        value1Cell.textContent = formatValue(data.country1.data[i]?.value, data.indicator.code) || 'N/A';
+        row.appendChild(value1Cell);
+        
+        const value2Cell = document.createElement('td');
+        value2Cell.textContent = formatValue(data.country2.data[i]?.value, data.indicator.code) || 'N/A';
+        row.appendChild(value2Cell);
+        
+        tableBody.appendChild(row);
+      }
+    }
+    
+    function getSelectedOptionText(selectElement) {
+      const selectedOption = selectElement.options[selectElement.selectedIndex];
+      return selectedOption.textContent;
+    }
+    
+    function formatValue(value, indicator) {
+      if (value === 'N/A' || value === undefined) return 'N/A';
+      switch (indicator) {
+        case 'gdp': return `$${value.toLocaleString()} Billion`;
+        case 'population': return `${value.toLocaleString()} Million`;
+        default: return value;
+      }
+    }
+    
+    function getIndicatorUnit(indicator) {
+      switch (indicator) {
+        case 'gdp': return 'Billion USD';
+        case 'population': return 'Million';
+        default: return '';
+      }
+    }
+    
+    function formatDate(dateString) {
+      if (dateString === 'N/A' || !dateString) return 'N/A';
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+    
+    function showError(message) {
+      errorEl.textContent = message;
+      errorEl.style.display = 'block';
+      loadingEl.style.display = 'none';
+    }
+  </script>
+</body>
+</html>
